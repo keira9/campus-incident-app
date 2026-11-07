@@ -1,10 +1,13 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../models/app_user.dart';
 import '../models/incident.dart';
 import '../services/incident_service.dart';
 import '../services/storage_service.dart';
+import '../utils/incident_filters.dart';
 
 class IncidentProvider extends ChangeNotifier {
   final IncidentService _service;
@@ -14,8 +17,10 @@ class IncidentProvider extends ChangeNotifier {
   List<Incident> _all = [];
   bool loading = true;
   bool submitting = false;
+  String? updatingIncidentId;
   String? error;
   String? notice;
+  String? statusError;
 
   String _query = '';
   String? _category;
@@ -28,31 +33,30 @@ class IncidentProvider extends ChangeNotifier {
   String? get status => _status;
   List<Incident> get all => _all;
 
-  List<Incident> get filtered => _all.where((i) {
-        final q = _query.toLowerCase();
-        final matchesQuery = q.isEmpty ||
-            i.title.toLowerCase().contains(q) ||
-            i.description.toLowerCase().contains(q) ||
-            i.location.toLowerCase().contains(q);
-        final matchesCat = _category == null || i.category == _category;
-        final matchesStatus = _status == null || i.status == _status;
-        return matchesQuery && matchesCat && matchesStatus;
-      }).toList();
+  List<Incident> get filtered => filterIncidents(
+    _all,
+    query: _query,
+    category: _category,
+    status: _status,
+  );
 
   /// Called once a verified user reaches the home screen.
   void start() {
     if (_sub != null) return;
     loading = true;
-    _sub = _service.watchIncidents().listen((list) {
-      _all = list;
-      loading = false;
-      error = null;
-      notifyListeners();
-    }, onError: (_) {
-      loading = false;
-      error = 'Could not load reports.';
-      notifyListeners();
-    });
+    _sub = _service.watchIncidents().listen(
+      (list) {
+        _all = list;
+        loading = false;
+        error = null;
+        notifyListeners();
+      },
+      onError: (_) {
+        loading = false;
+        error = 'Could not load reports.';
+        notifyListeners();
+      },
+    );
   }
 
   /// Called when the home screen is removed (logout). Does not notify.
@@ -123,6 +127,37 @@ class IncidentProvider extends ChangeNotifier {
       return false;
     } finally {
       submitting = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> updateStatus({
+    required AppUser user,
+    required Incident incident,
+    required String status,
+  }) async {
+    if (!user.isStaff) {
+      statusError = 'Only authorized staff can update report statuses.';
+      notifyListeners();
+      return false;
+    }
+
+    updatingIncidentId = incident.id;
+    statusError = null;
+    notifyListeners();
+    try {
+      await _service.updateStatus(
+        incidentId: incident.id,
+        status: status,
+        by: user.name,
+      );
+      return true;
+    } catch (_) {
+      statusError =
+          'Could not update the report status. Check your connection.';
+      return false;
+    } finally {
+      updatingIncidentId = null;
       notifyListeners();
     }
   }

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../models/incident.dart';
 import '../utils/constants.dart';
 
@@ -38,8 +39,22 @@ class IncidentService {
           'status': IncidentStatus.submitted,
           'by': reporterName,
           'at': Timestamp.now(),
-        }
+        },
       ],
+    });
+  }
+
+  Future<void> updateStatus({
+    required String incidentId,
+    required String status,
+    required String by,
+  }) {
+    return _col.doc(incidentId).update({
+      'status': status,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'statusHistory': FieldValue.arrayUnion([
+        {'status': status, 'by': by, 'at': Timestamp.now()},
+      ]),
     });
   }
 }

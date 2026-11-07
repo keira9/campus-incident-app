@@ -1,0 +1,30 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /incident_photos/{fileName} {
+      function signedIn() {
+        return request.auth != null &&
+          request.auth.token.email_verified == true &&
+          request.auth.token.email.matches(
+            '.*@(alustudent\\.com|alueducation\\.com)$'
+          );
+      }
+
+      function isStaff() {
+        return signedIn() &&
+          firestore.exists(
+            /databases/(default)/documents/users/$(request.auth.uid)
+          ) &&
+          firestore.get(
+            /databases/(default)/documents/users/$(request.auth.uid)
+          ).data.role == 'staff';
+      }
+
+      allow read: if signedIn();
+      allow create, update: if signedIn() &&
+        request.resource.size < 5 * 1024 * 1024 &&
+        request.resource.contentType == 'image/jpeg';
+      allow delete: if isStaff();
+    }
+  }
+}

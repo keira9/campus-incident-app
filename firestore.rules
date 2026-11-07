@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function aluEmail() {
+      return request.auth.token.email.matches(
+        '.*@(alustudent\\.com|alueducation\\.com)$'
+      );
+    }
+
+    function verifiedAluUser() {
+      return request.auth != null &&
+        request.auth.token.email_verified == true &&
+        aluEmail();
+    }
+
+    function isStaff() {
+      return verifiedAluUser() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'staff';
+    }
+
+    function validStatus(status) {
+      return status in ['Submitted', 'In Review', 'In Progress', 'Resolved'];
+    }
+
+    match /users/{userId} {
+      allow create: if request.auth != null &&
+        request.auth.uid == userId &&
+        request.resource.data.role == 'student' &&
+        request.resource.data.email == request.auth.token.email &&
+        aluEmail();
+
+      allow read: if request.auth != null &&
+        (request.auth.uid == userId ||
+          (verifiedAluUser() && isStaff()));
+
+      allow update: if request.auth != null &&
+        request.auth.uid == userId &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['name', 'email']);
+
+      allow delete: if false;
+    }
+
+    match /incidents/{incidentId} {
+      allow read: if verifiedAluUser();
+
+      allow create: if verifiedAluUser() &&
+        request.resource.data.keys().hasAll([
+          'title', 'description', 'category', 'location', 'photoUrl',
+          'status', 'reporterId', 'reporterName', 'createdAt',
+          'updatedAt', 'statusHistory'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          'title', 'description', 'category', 'location', 'photoUrl',
+          'status', 'reporterId', 'reporterName', 'createdAt',
+          'updatedAt', 'statusHistory'
+        ]) &&
+        request.resource.data.reporterId == request.auth.uid &&
+        request.resource.data.reporterName ==
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name &&
+        request.resource.data.title is string &&
+        request.resource.data.description is string &&
+        request.resource.data.location is string &&
+        request.resource.data.category in [
+          'Broken facilities', 'Water shortage', 'Electricity outage',
+          'Damaged furniture', 'Sanitation', 'Safety concern', 'Other'
+        ] &&
+        request.resource.data.status == 'Submitted' &&
+        (request.resource.data.photoUrl == null ||
+          request.resource.data.photoUrl is string) &&
+        request.resource.data.statusHistory is list &&
+        request.resource.data.statusHistory.size() == 1 &&
+        request.resource.data.statusHistory[0].status == 'Submitted' &&
+        request.resource.data.statusHistory[0].by ==
+          request.resource.data.reporterName;
+
+      allow update: if isStaff() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'updatedAt', 'statusHistory']) &&
+        validStatus(request.resource.data.status) &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.statusHistory is list &&
+        request.resource.data.statusHistory.size() ==
+          resource.data.statusHistory.size() + 1 &&
+        request.resource.data.statusHistory[
+          request.resource.data.statusHistory.size() - 1
+        ].status == request.resource.data.status &&
+        request.resource.data.statusHistory[
+          request.resource.data.statusHistory.size() - 1
+        ].by ==
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name;
+
+      allow delete: if isStaff();
+    }
+  }
+}
