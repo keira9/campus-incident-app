@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
+
 import 'firebase_options.dart';
 import 'providers/auth_provider.dart';
+import 'providers/incident_provider.dart';
 import 'services/auth_service.dart';
+import 'services/incident_service.dart';
+import 'services/storage_service.dart';
 import 'screens/auth_gate.dart';
 
 Future<void> main() async {
@@ -20,6 +24,9 @@ class CampusIncidentApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider(AuthService())),
+        ChangeNotifierProvider(
+          create: (_) => IncidentProvider(IncidentService(), StorageService()),
+        ),
       ],
       child: MaterialApp(
         title: 'Campus Incident Reporter',
